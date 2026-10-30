@@ -29,13 +29,11 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK + NDK packages
+      - name: Install SDK + NDK packages (preinstalled SDK on the runner)
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
 
       - name: Fetch hev-socks5-tunnel (tun2socks)
         run: |

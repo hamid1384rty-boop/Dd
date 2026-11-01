@@ -2,57 +2,54 @@ name: Build APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Unzip project
         run: |
-          ZIP=$(ls -1 *.zip | head -n1)
-          echo "Using $ZIP"
-          mkdir -p build_src
-          unzip -q "$ZIP" -d build_src
-          SETTINGS=$(find build_src -name settings.gradle.kts -not -path '*/node_modules/*' | head -n1)
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Project root: $PROJECT_DIR"
+          ZIP=$(ls -1 *.zip 2>/dev/null | head -n 1)
+          if [ -z "$ZIP" ]; then echo "No zip file found in repo root"; exit 1; fi
+          echo "Using: $ZIP"
+          mkdir -p app
+          unzip -q -o "$ZIP" -d app
+          PKG=$(find app -name package.json -not -path "*/node_modules/*" -not -path "*/__MACOSX/*" | head -n 1)
+          if [ -z "$PKG" ]; then echo "package.json not found in zip"; exit 1; fi
+          DIR=$(dirname "$PKG")
+          echo "Project dir: $DIR"
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Install SDK + NDK packages (preinstalled SDK on the runner)
-        run: |
-          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKM" --licenses > /dev/null || true
-          "$SDKM" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm install
 
-      - name: Fetch hev-socks5-tunnel (tun2socks)
-        run: |
-          git clone --recursive --depth 1 --shallow-submodules \
-            https://github.com/heiher/hev-socks5-tunnel \
-            "$PROJECT_DIR/app/src/main/jni/hev-socks5-tunnel"
+      - name: Add Android platform
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx cap add android
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.7
+      - name: Sync web files
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx cap sync android
 
       - name: Build debug APK
-        run: |
-          cd "$PROJECT_DIR"
-          gradle assembleDebug --no-daemon --stacktrace
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: ./gradlew assembleDebug
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: DpiBypass-debug-apk
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: darooyar-apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk

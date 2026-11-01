@@ -74,9 +74,11 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}/android
         env:
           KS_B64: ${{ secrets.KEYSTORE_B64 }}${{ secrets.KEYSTORE_B64_1 }}${{ secrets.KEYSTORE_B64_2 }}${{ secrets.KEYSTORE_B64_3 }}
-          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_PASS_RAW: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
+          KS_PASS=$(printf '%s' "$KS_PASS_RAW" | tr -d ' \n\r\t"')
           if [ -z "$KS_PASS" ]; then echo "ERROR: KEYSTORE_PASSWORD secret is not set"; exit 1; fi
+          echo "Password length: ${#KS_PASS} (expected 20)"
           if [ -f "$GITHUB_WORKSPACE/darooyar.keystore" ]; then
             echo "Using darooyar.keystore from repo root"
             cp "$GITHUB_WORKSPACE/darooyar.keystore" app/darooyar.keystore
@@ -85,16 +87,18 @@ jobs:
             echo "KEYSTORE_B64 length: ${#CLEAN} (expected 3516)"
             printf '%s' "$CLEAN" | base64 -d > app/darooyar.keystore || { echo "ERROR: KEYSTORE secret is corrupted"; exit 1; }
           fi
-          keytool -list -keystore app/darooyar.keystore -storepass "$KS_PASS" -alias darooyar | tail -2
-          cat >> app/build.gradle <<GRADLE
+          keytool -list -keystore app/darooyar.keystore -storepass "$KS_PASS" -alias darooyar > /tmp/kt.txt 2>&1 || { cat /tmp/kt.txt; echo "ERROR: keystore cannot be opened (wrong password or file)"; exit 1; }
+          tail -2 /tmp/kt.txt
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          cat >> app/build.gradle <<'GRADLE'
 
           android {
               signingConfigs {
                   debug {
                       storeFile file('darooyar.keystore')
-                      storePassword '$KS_PASS'
+                      storePassword System.getenv('KS_PASS')
                       keyAlias 'darooyar'
-                      keyPassword '$KS_PASS'
+                      keyPassword System.getenv('KS_PASS')
                   }
               }
           }

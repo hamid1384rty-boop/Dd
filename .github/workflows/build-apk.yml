@@ -70,6 +70,28 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: npx cap sync android
 
+      - name: Setup fixed signing key
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then echo "ERROR: KEYSTORE_B64 / KEYSTORE_PASSWORD secrets are not set"; exit 1; fi
+          echo "$KS_B64" | base64 -d > app/darooyar.keystore
+          cat >> app/build.gradle <<GRADLE
+
+          android {
+              signingConfigs {
+                  debug {
+                      storeFile file('darooyar.keystore')
+                      storePassword '$KS_PASS'
+                      keyAlias 'darooyar'
+                      keyPassword '$KS_PASS'
+                  }
+              }
+          }
+          GRADLE
+
       - name: Build debug APK
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: ./gradlew assembleDebug

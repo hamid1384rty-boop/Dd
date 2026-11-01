@@ -10,11 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Unzip project
         run: |
-          ZIP=$(ls -1 *.zip 2>/dev/null | head -n 1)
+          # newest zip = the one with the most recent commit
+          ZIP=$(for f in *.zip; do [ -f "$f" ] && echo "$(git log -1 --format=%ct -- "$f") $f"; done | sort -n | tail -n 1 | cut -d' ' -f2-)
           if [ -z "$ZIP" ]; then echo "No zip file found in repo root"; exit 1; fi
+          echo "Available zips:"; ls -la *.zip
           echo "Using: $ZIP"
           mkdir -p app
           unzip -q -o "$ZIP" -d app
@@ -23,6 +27,15 @@ jobs:
           DIR=$(dirname "$PKG")
           echo "Project dir: $DIR"
           echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+
+      - name: Verify this is the latest zip
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          grep -q 'id="cr"' www/index.html || { echo "ERROR: creator button missing -> an OLD zip was used"; exit 1; }
+          test -d resources/android/res || { echo "ERROR: icon resources missing -> an OLD zip was used"; exit 1; }
+          test -f resources/icon-v2.txt || { echo "ERROR: new icon marker missing -> an OLD zip was used (zip name: $PROJECT_DIR)"; exit 1; }
+          sha1sum resources/android/res/mipmap-xxxhdpi/ic_launcher_foreground.png www/logo.png
+          echo "OK: latest zip detected"
 
       - uses: actions/setup-node@v4
         with:
@@ -40,6 +53,18 @@ jobs:
       - name: Add Android platform
         working-directory: ${{ env.PROJECT_DIR }}
         run: npx cap add android
+
+      - name: Apply app icon
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          RES=android/app/src/main/res
+          rm -f $RES/drawable-v24/ic_launcher_foreground.xml $RES/drawable/ic_launcher_background.xml
+          rm -f $RES/mipmap-*/ic_launcher*.png $RES/mipmap-anydpi-v26/ic_launcher*.xml
+          if [ ! -d resources/android/res ]; then echo 'ERROR: resources/android/res missing in this zip (old zip?)'; exit 1; fi
+          cp -r resources/android/res/. $RES/
+          ls -la $RES/mipmap-xxxhdpi
+          sha1sum $RES/mipmap-xxxhdpi/ic_launcher_foreground.png
+          grep -n 'icon' android/app/src/main/AndroidManifest.xml
 
       - name: Sync web files
         working-directory: ${{ env.PROJECT_DIR }}

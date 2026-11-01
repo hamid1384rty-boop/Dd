@@ -73,11 +73,19 @@ jobs:
       - name: Setup fixed signing key
         working-directory: ${{ env.PROJECT_DIR }}/android
         env:
-          KS_B64: ${{ secrets.KEYSTORE_B64 }}
+          KS_B64: ${{ secrets.KEYSTORE_B64 }}${{ secrets.KEYSTORE_B64_1 }}${{ secrets.KEYSTORE_B64_2 }}${{ secrets.KEYSTORE_B64_3 }}
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then echo "ERROR: KEYSTORE_B64 / KEYSTORE_PASSWORD secrets are not set"; exit 1; fi
-          echo "$KS_B64" | base64 -d > app/darooyar.keystore
+          if [ -z "$KS_PASS" ]; then echo "ERROR: KEYSTORE_PASSWORD secret is not set"; exit 1; fi
+          if [ -f "$GITHUB_WORKSPACE/darooyar.keystore" ]; then
+            echo "Using darooyar.keystore from repo root"
+            cp "$GITHUB_WORKSPACE/darooyar.keystore" app/darooyar.keystore
+          else
+            CLEAN=$(printf '%s' "$KS_B64" | tr -d ' \n\r\t"')
+            echo "KEYSTORE_B64 length: ${#CLEAN} (expected 3516)"
+            printf '%s' "$CLEAN" | base64 -d > app/darooyar.keystore || { echo "ERROR: KEYSTORE secret is corrupted"; exit 1; }
+          fi
+          keytool -list -keystore app/darooyar.keystore -storepass "$KS_PASS" -alias darooyar | tail -2
           cat >> app/build.gradle <<GRADLE
 
           android {
